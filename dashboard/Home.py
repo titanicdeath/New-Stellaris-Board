@@ -15,6 +15,7 @@ if str(_DASHBOARD_DIR) not in sys.path:
 
 from lib.format import display_name
 from lib.load import load_save, render_save_selector
+from lib.localize import localize_or_fallback
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -31,13 +32,25 @@ def _render_labeled_values(title: str, values: list[Any], empty_label: str = "�
         st.write(empty_label)
         return
 
-    labels = []
+    labels: list[str] = []
     for value in values:
         if isinstance(value, dict):
-            labels.append(display_name(value.get("name") or value.get("key") or ""))
+            maybe_key = value.get("key") or value.get("name") or ""
+            labels.append(localize_or_fallback(maybe_key) if maybe_key else empty_label)
         else:
-            labels.append(display_name(value))
-    st.write(", ".join(label for label in labels if label) or empty_label)
+            labels.append(localize_or_fallback(str(value)))
+
+    rendered = [label for label in labels if label and label != empty_label]
+    st.write(", ".join(rendered) if rendered else empty_label)
+
+
+def _render_metrics_grid(stats: list[tuple[str, Any]], per_row: int = 4) -> None:
+    for i in range(0, len(stats), per_row):
+        row = stats[i : i + per_row]
+        cols = st.columns(per_row)
+        for j, (label, value) in enumerate(row):
+            display_value = "—" if value in (None, "") else value
+            cols[j].metric(label, display_value)
 
 
 st.set_page_config(page_title="Stellaris Save Dashboard", layout="wide")
@@ -69,22 +82,21 @@ with header_left:
 with header_right:
     st.metric("Save name", meta.get("save_name", "—"))
 
+government = source_country.get("government", {}) if isinstance(source_country, dict) else {}
+
+gov_type = localize_or_fallback(government.get("type", "")) if isinstance(government, dict) else "—"
+authority = localize_or_fallback(government.get("authority", "")) if isinstance(government, dict) else "—"
+
 info_col1, info_col2 = st.columns(2)
 with info_col1:
-    government = source_country.get("government", {})
-    authority = source_country.get("authority", "—")
-
     st.markdown("**Government**")
-    if isinstance(government, dict):
-        st.write(display_name(government.get("name") or government.get("key") or "—"))
-    else:
-        st.write(display_name(government))
+    st.write(gov_type if gov_type else "—")
 
     st.markdown("**Authority**")
-    st.write(display_name(authority))
+    st.write(authority if authority else "—")
 
     _render_labeled_values("Ethics", _as_list(source_country.get("ethics")))
-    _render_labeled_values("Civics", _as_list(source_country.get("civics")))
+    _render_labeled_values("Civics", _as_list(government.get("civics", []) if isinstance(government, dict) else []))
 
 with info_col2:
     perks = _as_list(source_country.get("ascension_perks"))
@@ -101,17 +113,14 @@ with info_col2:
 stats = [
     ("Military Power", source_country.get("military_power")),
     ("Economy Power", source_country.get("economy_power")),
-    ("Tech Power", source_country.get("technology_power")),
+    ("Tech Power", source_country.get("tech_power")),
     ("Fleet Size", source_country.get("fleet_size")),
     ("Sapient Pops", source_country.get("num_sapient_pops")),
     ("Owned Planets", len(_as_list(source_country.get("owned_planets")))),
     ("Controlled Planets", len(_as_list(source_country.get("controlled_planets")))),
-    ("Starbases", source_country.get("starbase_count")),
+    ("Starbases", source_country.get("num_upgraded_starbase")),
+    ("Starbase Capacity", source_country.get("starbase_capacity")),
 ]
 
 st.markdown("### Key Metrics")
-metric_cols = st.columns(4)
-for i, (label, value) in enumerate(stats):
-    with metric_cols[i % 4]:
-        display_value = "—" if value in (None, "") else value
-        metric_cols[i % 4].metric(label, display_value)
+_render_metrics_grid(stats, per_row=4)
