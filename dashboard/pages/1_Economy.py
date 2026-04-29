@@ -14,9 +14,40 @@ if str(_DASHBOARD_DIR) not in sys.path:
 from lib.load import load_save, render_save_selector
 from lib.localize import localize_or_fallback
 
+_RESOURCE_ORDER = [
+    "energy",
+    "minerals",
+    "food",
+    "consumer_goods",
+    "alloys",
+    "trade",
+    "physics_research",
+    "society_research",
+    "engineering_research",
+    "unity",
+    "influence",
+    "volatile_motes",
+    "exotic_gases",
+    "rare_crystals",
+    "dark_matter",
+    "zro",
+    "living_metal",
+    "nanites",
+    "minor_artifacts",
+]
+
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _order_resources(resources: set[str]) -> list[str]:
+    order_map = {name: idx for idx, name in enumerate(_RESOURCE_ORDER)}
+    known = [r for r in resources if r in order_map]
+    unknown = [r for r in resources if r not in order_map]
+    known_sorted = sorted(known, key=lambda r: order_map[r])
+    unknown_sorted = sorted(unknown)
+    return known_sorted + unknown_sorted
 
 
 def _balance_to_dataframe(balance: dict[str, Any]) -> pd.DataFrame:
@@ -35,17 +66,23 @@ def _balance_to_dataframe(balance: dict[str, Any]) -> pd.DataFrame:
     if not normalized:
         return pd.DataFrame()
 
-    resources = sorted(all_resources)
+    resources = _order_resources(all_resources)
+    resource_labels = [localize_or_fallback(resource) for resource in resources]
+
     rows = []
     for category, resource_map in normalized.items():
         row = {"Category": localize_or_fallback(category)}
-        for resource in resources:
-            row[localize_or_fallback(resource)] = resource_map.get(resource, 0.0)
+        for resource, label in zip(resources, resource_labels):
+            row[label] = resource_map.get(resource, 0.0)
         rows.append(row)
 
     df = pd.DataFrame(rows).set_index("Category")
-    df.loc["Category Total"] = df.sum(axis=0)
-    df["Row Total"] = df.sum(axis=1)
+    original_columns = list(df.columns)
+    df["Row Total"] = df[original_columns].sum(axis=1)
+
+    totals_values = {col: df[col].sum() for col in original_columns}
+    totals_values["Row Total"] = sum(totals_values.values())
+    df.loc["Category Total"] = totals_values
     return df
 
 
